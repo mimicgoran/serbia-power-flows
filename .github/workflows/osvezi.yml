@@ -1,0 +1,71 @@
+name: Osvezi podatke i objavi mapu
+
+on:
+  schedule:
+    # Svaki dan u 04:41 UTC (05:41 zimi / 06:41 leti po beogradskom vremenu).
+    # Podaci za jucerasnji dan su tada vec objavljeni na ENTSO-E (rok je H+1).
+    - cron: "41 4 * * *"
+  workflow_dispatch:
+    inputs:
+      od:
+        description: "Prvi dan (YYYY-MM-DD). Prazno = poslednja 3 dana."
+        required: false
+      do:
+        description: "Poslednji dan (YYYY-MM-DD). Prazno = juce."
+        required: false
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: osvezi
+  cancel-in-progress: false
+
+jobs:
+  osvezi:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.objava.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Instaliraj biblioteke
+        run: pip install -r requirements.txt
+
+      - name: Povuci podatke sa ENTSO-E
+        env:
+          ENTSOE_TOKEN: ${{ secrets.ENTSOE_TOKEN }}
+          OD: ${{ github.event.inputs.od }}
+          DO: ${{ github.event.inputs.do }}
+        run: |
+          ARGS=""
+          if [ -n "$OD" ]; then ARGS="$ARGS --od $OD"; fi
+          if [ -n "$DO" ]; then ARGS="$ARGS --do $DO"; fi
+          python scripts/entsoe_srbija.py $ARGS
+
+      - name: Sacuvaj podatke u repozitorijum
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/data
+          if git diff --cached --quiet; then
+            echo "Nema promena."
+          else
+            git commit -m "Podaci osvezeni $(date -u +%Y-%m-%d)"
+            git push
+          fi
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs
+      - id: objava
+        uses: actions/deploy-pages@v4

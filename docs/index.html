@@ -1,0 +1,386 @@
+<!doctype html>
+<html lang="sr-Latn">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Struja preko granica Srbije</title>
+<meta name="description" content="Prekogranični tokovi električne energije za zonu Srbije, sat po sat, prema podacima ENTSO-E Transparency Platform.">
+<style>
+  :root{
+    --bg:#0b1220; --panel:#111a2c; --card:#17223a; --line:#24314d;
+    --text:#e6ecf5; --muted:#93a2bd; --faint:#64738f;
+    --uvoz:#2dd4bf; --izvoz:#fb7185; --razlika:#fbbf24; --ok:#4ade80; --warn:#fbbf24;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--text);
+    font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+  .app{display:grid;grid-template-columns:minmax(0,1fr) 380px;height:100vh}
+  .mapwrap{position:relative;min-height:0}
+  #mapa{position:absolute;inset:0}
+  header{position:absolute;top:0;left:0;right:0;padding:18px 22px 0;pointer-events:none;z-index:2}
+  header h1{margin:0;font-size:22px;font-weight:600;letter-spacing:-.01em}
+  header p{margin:2px 0 0;color:var(--muted);font-size:14px}
+  .legend{position:absolute;left:22px;bottom:18px;z-index:2;display:flex;gap:16px;flex-wrap:wrap;
+    font-size:13px;color:var(--muted);background:rgba(11,18,32,.75);padding:8px 12px;border-radius:8px}
+  .legend i{display:inline-block;width:18px;height:4px;border-radius:2px;vertical-align:middle;margin-right:6px}
+  aside{background:var(--panel);border-left:1px solid var(--line);overflow-y:auto;padding:18px 20px 28px}
+  .row{display:flex;gap:8px;align-items:center}
+  select,button{font:inherit;color:var(--text);background:var(--card);border:1px solid var(--line);
+    border-radius:8px;padding:7px 10px}
+  button{cursor:pointer}
+  button:hover,select:hover{border-color:#3a4a6d}
+  .seg{display:flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;margin-top:12px}
+  .seg button{flex:1;border:0;border-radius:0;background:transparent;color:var(--muted);padding:8px 6px}
+  .seg button+button{border-left:1px solid var(--line)}
+  .seg button[aria-pressed="true"]{background:var(--card);color:var(--text)}
+  .vreme{margin-top:16px;display:flex;align-items:baseline;justify-content:space-between}
+  .vreme strong{font-size:28px;font-weight:600;font-variant-numeric:tabular-nums}
+  .vreme span{color:var(--muted);font-size:13px}
+  .slider{display:flex;gap:10px;align-items:center;margin-top:6px}
+  input[type=range]{flex:1;accent-color:var(--uvoz)}
+  #play{width:40px;padding:7px 0}
+  .cards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:16px}
+  .card{background:var(--card);border-radius:10px;padding:10px 12px}
+  .card .l{font-size:12px;color:var(--muted)}
+  .card .v{font-size:20px;font-weight:600;font-variant-numeric:tabular-nums;margin-top:2px}
+  .card .s{font-size:12px;color:var(--faint)}
+  h2{font-size:13px;font-weight:600;color:var(--muted);margin:20px 0 6px;text-transform:none}
+  #graf{width:100%;height:110px;display:block;cursor:pointer}
+  table{width:100%;border-collapse:collapse;font-size:14px;font-variant-numeric:tabular-nums}
+  th{font-weight:500;color:var(--muted);font-size:12px;text-align:right;padding:4px 0}
+  th:first-child,td:first-child{text-align:left}
+  td{text-align:right;padding:6px 0;border-top:1px solid var(--line)}
+  tr.hl td{background:rgba(255,255,255,.04)}
+  .uv{color:var(--uvoz)} .iz{color:var(--izvoz)} .na{color:var(--faint)}
+  .note{font-size:12px;color:var(--faint);line-height:1.55}
+  .note p{margin:6px 0}
+  .note a{color:var(--muted)}
+  .dan{font-size:13px;color:var(--muted);margin-top:8px}
+  #greska{display:none;margin:14px 0;padding:10px 12px;border-radius:8px;background:#3b1d24;color:#fecdd3;font-size:14px}
+  @media (max-width:860px){
+    .app{grid-template-columns:1fr;grid-template-rows:58vh auto;height:auto}
+    aside{border-left:0;border-top:1px solid var(--line);padding:16px}
+    header{padding:14px 16px 0} header h1{font-size:19px}
+    .legend{left:16px;bottom:12px;font-size:12px}
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="mapwrap">
+    <div id="mapa"></div>
+    <header>
+      <h1>Struja preko granica Srbije</h1>
+      <p id="podnaslov">Fizički tokovi po granicama, sat po sat</p>
+    </header>
+    <div class="legend" id="legenda"></div>
+  </div>
+
+  <aside>
+    <div id="greska"></div>
+    <div class="row">
+      <label for="dan" class="note" style="margin:0">Dan</label>
+      <select id="dan" style="flex:1"></select>
+    </div>
+    <div class="seg" role="group" aria-label="Šta se prikazuje">
+      <button data-rezim="stvarno" aria-pressed="true">Stvarno</button>
+      <button data-rezim="plan" aria-pressed="false">Plan</button>
+      <button data-rezim="razlika" aria-pressed="false">Razlika</button>
+    </div>
+
+    <div class="vreme"><strong id="sat">–</strong><span id="datumtxt"></span></div>
+    <div class="slider">
+      <button id="play" aria-label="Pusti animaciju">▶</button>
+      <input type="range" id="klizac" min="0" max="23" step="1" value="0" aria-label="Sat">
+    </div>
+
+    <div class="cards">
+      <div class="card"><div class="l">Potrošnja Srbije</div><div class="v" id="c-potr">–</div><div class="s">u ovom satu</div></div>
+      <div class="card"><div class="l" id="c-neto-l">Neto uvoz</div><div class="v" id="c-neto">–</div><div class="s">stvarni fizički tok</div></div>
+      <div class="card"><div class="l">Udeo neto uvoza</div><div class="v" id="c-udeo">–</div><div class="s">u potrošnji</div></div>
+      <div class="card"><div class="l">Provera plana</div><div class="v" id="c-prov" style="font-size:16px">–</div><div class="s">zbir granica vs. neto pozicija</div></div>
+    </div>
+    <div class="dan" id="dnevno"></div>
+
+    <h2>Neto uvoz kroz dan</h2>
+    <svg id="graf" viewBox="0 0 340 110" preserveAspectRatio="none" role="img" aria-label="Neto uvoz Srbije po satima"></svg>
+    <div class="note" style="display:flex;gap:14px;margin-top:2px">
+      <span><span style="color:var(--uvoz)">━</span> stvarno</span>
+      <span><span style="color:var(--muted)">┅</span> plan</span>
+      <span>iznad nule = uvoz</span>
+    </div>
+
+    <h2>Granice u izabranom satu (MW)</h2>
+    <table>
+      <thead><tr><th>Granica</th><th>Stvarno</th><th>Plan</th><th>Razlika</th></tr></thead>
+      <tbody id="tabela"></tbody>
+    </table>
+    <p class="note">Pozitivno = uvoz u Srbiju, negativno = izvoz. Razlika = stvarno − plan.</p>
+    <button id="csv" style="margin-top:4px">Preuzmi podatke za ovaj dan (CSV)</button>
+
+    <h2>O podacima</h2>
+    <div class="note">
+      <p>Izvor: <a href="https://transparency.entsoe.eu" target="_blank" rel="noopener">ENTSO-E Transparency Platform</a>.
+        Stvarno = Cross-Border Physical Flows (12.1.G), izmerene satne vrednosti, zbirno po granici, ne po dalekovodu.
+        Plan = Scheduled Commercial Exchanges (12.1.F, Total). Potrošnja = Actual Total Load (6.1.A).</p>
+      <p>Prikazane su zone trgovanja ENTSO-E. Operatori mogu naknadno da isprave vrednosti; poslednja 3 dana se svakog jutra ponovo preuzimaju.
+        „n/e” znači da podatak nije objavljen.</p>
+      <p>* Kosovo i Metohija prikazani su kao deo Srbije. Oznaka Kosovo* odnosi se na posebnu zonu trgovanja u podacima ENTSO-E i u skladu je sa Rezolucijom SB UN 1244.</p>
+      <p>Granice: Natural Earth. <span id="osvezeno"></span></p>
+    </div>
+  </aside>
+</div>
+
+<script src="https://unpkg.com/deck.gl@9.1.14/dist.min.js"></script>
+<script>
+const NAZIVI = {RS:"Srbija",HU:"Mađarska",RO:"Rumunija",BG:"Bugarska",MK:"S. Makedonija",
+  XK:"Kosovo*",ME:"Crna Gora",BA:"BiH",HR:"Hrvatska",AL:"Albanija"};
+const KRATKO = {RS:"RS",HU:"HU",RO:"RO",BG:"BG",MK:"MK",XK:"Kosovo*",ME:"ME",BA:"BA",HR:"HR",AL:"AL"};
+const TACKE = {RS:[20.85,44.3],HU:[19.5,47.1],RO:[24.9,45.9],BG:[25.2,42.7],MK:[21.7,41.6],
+  XK:[20.9,42.6],ME:[19.3,42.8],BA:[17.8,44.2],HR:[16.4,45.6],AL:[20.0,41.1]};
+const SUSEDI = ["HU","RO","BG","MK","XK","ME","BA","HR","AL"];
+const BOJA = {uvoz:[45,212,191], izvoz:[251,113,133], razlika:[251,191,36]};
+
+const nf = new Intl.NumberFormat("sr-Latn-RS",{maximumFractionDigits:0});
+const nf1 = new Intl.NumberFormat("sr-Latn-RS",{maximumFractionDigits:1});
+const $ = id => document.getElementById(id);
+
+const stanje = {dani:[], dan:null, podaci:null, sat:0, rezim:"stvarno", hl:null, timer:null, zemlje:null};
+
+function vrednost(k, i, rezim = stanje.rezim){
+  const g = stanje.podaci.granice[k]; if(!g) return null;
+  const s = g.stvarno[i], p = g.plan[i];
+  if(rezim==="stvarno") return s;
+  if(rezim==="plan") return p;
+  return (s==null||p==null) ? null : s - p;
+}
+function zbir(rezim, i){
+  let z = 0, ima = false;
+  for(const k of SUSEDI){ const v = vrednost(k,i,rezim); if(v!=null){ z += v; ima = true; } }
+  return ima ? z : null;
+}
+function oznakaSata(i){
+  const s = stanje.podaci.sati;
+  const dup = s.indexOf(s[i]) !== i ? " (2)" : "";
+  const sled = i+1 < s.length ? s[i+1] : "24:00";
+  return `${s[i]}–${sled}${dup}`;
+}
+function znak(v){ return v==null ? "n/e" : (v>0?"+":"") + nf.format(v); }
+function klasa(v){ return v==null ? "na" : v>0.5 ? "uv" : v<-0.5 ? "iz" : ""; }
+
+/* ---------- mapa ---------- */
+const sirina = window.innerWidth;
+const pocetniPogled = {longitude: sirina<500 ? 21.4 : 20.9, latitude: sirina<860 ? 43.4 : 43.9,
+  zoom: sirina<500 ? 4.55 : sirina<860 ? 5.3 : 5.9, pitch:42, bearing:-24};
+
+const mapa = new deck.DeckGL({
+  container:"mapa",
+  initialViewState: pocetniPogled,
+  controller:{dragRotate:true, touchRotate:true},
+  getTooltip: ({object, layer}) => {
+    if(!object || !layer || layer.id!=="lukovi") return null;
+    const k = object.k, i = stanje.sat, g = stanje.podaci.granice[k];
+    return {html:`<b>${NAZIVI[k]}</b><br>Stvarno: ${znak(g.stvarno[i])} MW<br>Plan: ${znak(g.plan[i])} MW<br>Razlika: ${znak(vrednost(k,i,"razlika"))} MW`,
+      style:{background:"#17223a",color:"#e6ecf5",fontSize:"13px",borderRadius:"8px",padding:"8px 10px"}};
+  },
+  onClick: ({object, layer}) => { if(object && layer && layer.id==="lukovi"){ stanje.hl = stanje.hl===object.k?null:object.k; crtaj(); } }
+});
+
+function slojevi(){
+  const i = stanje.sat, rez = stanje.rezim;
+  const lukovi = [], prazno = [], natpisi = [];
+  for(const k of SUSEDI){
+    const v = vrednost(k,i);
+    const hl = stanje.hl && stanje.hl!==k;
+    if(v==null){
+      prazno.push({k, from:TACKE.RS, to:TACKE[k]});
+      natpisi.push({k, pos:TACKE[k], txt:`${KRATKO[k]}\nn/e`, boja:[100,115,143]});
+      continue;
+    }
+    const ka = v > 0;               // ka Srbiji (uvoz ili višak u odnosu na plan)
+    const boja = rez==="razlika" ? BOJA.razlika : (ka ? BOJA.uvoz : BOJA.izvoz);
+    if(Math.abs(v) >= 0.5){
+      lukovi.push({k, v, boja, hl,
+        src: ka ? TACKE[k] : TACKE.RS, dst: ka ? TACKE.RS : TACKE[k]});
+    }
+    const opis = rez==="razlika" ? (Math.abs(v)<0.5 ? "po planu" : (ka?"više ka RS":"više ka "+k))
+                                 : (Math.abs(v)<0.5 ? "0" : (ka?"uvoz":"izvoz"));
+    natpisi.push({k, pos:TACKE[k], txt:`${KRATKO[k]}\n${nf.format(Math.abs(v))} MW ${opis}`,
+      boja: hl ? [100,115,143] : [230,236,245]});
+  }
+  natpisi.push({k:"RS", pos:[TACKE.RS[0], TACKE.RS[1]+0.35], txt:"Srbija", boja:[230,236,245], vel:15});
+
+  return [
+    new deck.GeoJsonLayer({
+      id:"zemlje", data: stanje.zemlje, stroked:true, filled:true,
+      getFillColor: f => f.properties.tip==="srbija" ? [36,52,86] : f.properties.tip==="region" ? [0,0,0,0] : [22,30,47],
+      getLineColor: f => f.properties.tip==="region" ? [120,138,170] : [52,66,95],
+      getLineWidth: 1, lineWidthUnits:"pixels",
+      getDashArray: f => f.properties.tip==="region" ? [4,3] : [0,0],
+      dashJustified:true,
+      extensions:[new deck.PathStyleExtension({dash:true})]
+    }),
+    new deck.LineLayer({
+      id:"prazno", data: prazno, getSourcePosition:d=>d.from, getTargetPosition:d=>d.to,
+      getColor:[100,115,143,140], getWidth:1.5, widthUnits:"pixels"
+    }),
+    new deck.ArcLayer({
+      id:"lukovi", data: lukovi, pickable:true,
+      getSourcePosition:d=>d.src, getTargetPosition:d=>d.dst,
+      getSourceColor:d=>[...d.boja, d.hl?25:70],
+      getTargetColor:d=>[...d.boja, d.hl?60:255],
+      getWidth:d=>Math.max(2, Math.abs(d.v)/28), widthUnits:"pixels",
+      getHeight:0.55, greatCircle:false,
+      updateTriggers:{getSourceColor:[stanje.hl,stanje.rezim], getTargetColor:[stanje.hl,stanje.rezim]},
+      transitions:{getWidth:350}
+    }),
+    new deck.ScatterplotLayer({
+      id:"tacke", data:[{k:"RS"},...SUSEDI.map(k=>({k}))],
+      getPosition:d=>TACKE[d.k], getRadius:d=>d.k==="RS"?6:4, radiusUnits:"pixels",
+      getFillColor:d=>d.k==="RS"?[230,236,245]:[147,162,189]
+    }),
+    new deck.TextLayer({
+      id:"natpisi", data: natpisi, getPosition:d=>d.pos, getText:d=>d.txt,
+      getColor:d=>d.boja, getSize:d=>d.vel||12, sizeUnits:"pixels",
+      getPixelOffset:d=>d.k==="RS"?[0,0]:[0,18], getTextAnchor:"middle", getAlignmentBaseline:"top",
+      fontFamily:"system-ui,-apple-system,Segoe UI,Roboto,sans-serif", fontWeight:600,
+      characterSet:"auto", outlineWidth:3, outlineColor:[11,18,32,230],
+      fontSettings:{sdf:true}, billboard:true,
+      parameters:{depthCompare:"always"},
+      updateTriggers:{getColor:[stanje.hl]}
+    })
+  ];
+}
+
+/* ---------- panel ---------- */
+function legenda(){
+  $("legenda").innerHTML = stanje.rezim==="razlika"
+    ? `<span><i style="background:var(--razlika)"></i>Odstupanje od plana, luk ide u smeru viška</span>`
+    : `<span><i style="background:var(--uvoz)"></i>Uvoz u Srbiju</span><span><i style="background:var(--izvoz)"></i>Izvoz iz Srbije</span><span>Debljina = MW</span>`;
+  $("podnaslov").textContent = {stvarno:"Izmereni fizički tokovi po granicama, sat po sat",
+    plan:"Planirana komercijalna razmena po granicama, sat po sat",
+    razlika:"Razlika između stvarnog toka i plana, sat po sat"}[stanje.rezim];
+}
+
+function kartice(){
+  const i = stanje.sat, sr = stanje.podaci.srbija;
+  const potr = sr.potrosnja[i], neto = zbir("stvarno", i);
+  $("c-potr").textContent = potr==null ? "n/e" : nf.format(potr)+" MW";
+  $("c-neto-l").textContent = neto!=null && neto<0 ? "Neto izvoz" : "Neto uvoz";
+  $("c-neto").textContent = neto==null ? "n/e" : nf.format(Math.abs(neto))+" MW";
+  $("c-neto").className = "v " + klasa(neto);
+  $("c-udeo").textContent = (neto==null||!potr) ? "n/e" : nf1.format(neto/potr*100)+" %";
+  const pr = sr.provera[i];
+  $("c-prov").textContent = pr==="ok" ? "Slaže se" : pr==="ne slaže se" ? "Ne slaže se" : "Nema podatka";
+  $("c-prov").style.color = pr==="ok" ? "var(--ok)" : pr==="ne slaže se" ? "var(--warn)" : "var(--faint)";
+
+  let dn = 0, n = 0;
+  stanje.podaci.sati.forEach((_,j)=>{ const z = zbir("stvarno", j); if(z!=null){ dn += z; n++; } });
+  $("dnevno").textContent = n ? `Ceo dan: neto ${dn>=0?"uvoz":"izvoz"} ${nf.format(Math.abs(dn))} MWh (${n} sati sa podacima)` : "";
+}
+
+function graf(){
+  const s = stanje.podaci.sati, W = 340, H = 110, P = 6;
+  const st = s.map((_,j)=>zbir("stvarno",j)), pl = s.map((_,j)=>zbir("plan",j));
+  const sve = [...st,...pl,0].filter(v=>v!=null);
+  const mx = Math.max(...sve), mn = Math.min(...sve), r = (mx-mn)||1;
+  const x = j => P + j*(W-2*P)/Math.max(1,s.length-1);
+  const y = v => P + (mx-v)*(H-2*P)/r;
+  const put = arr => { let d="", pen=false; arr.forEach((v,j)=>{ if(v==null){pen=false;return;} d += (pen?"L":"M")+x(j).toFixed(1)+" "+y(v).toFixed(1)+" "; pen=true; }); return d; };
+  const i = stanje.sat;
+  $("graf").innerHTML = `
+    <line x1="${P}" x2="${W-P}" y1="${y(0)}" y2="${y(0)}" stroke="#24314d" stroke-width="1"/>
+    <path d="${put(pl)}" fill="none" stroke="#93a2bd" stroke-width="1.5" stroke-dasharray="3 3" vector-effect="non-scaling-stroke"/>
+    <path d="${put(st)}" fill="none" stroke="#2dd4bf" stroke-width="2" vector-effect="non-scaling-stroke"/>
+    <line x1="${x(i)}" x2="${x(i)}" y1="0" y2="${H}" stroke="#e6ecf5" stroke-opacity=".5" stroke-width="1" vector-effect="non-scaling-stroke"/>
+    ${st[i]!=null?`<circle cx="${x(i)}" cy="${y(st[i])}" r="3.5" fill="#2dd4bf"/>`:""}`;
+}
+
+function tabela(){
+  const i = stanje.sat, g = stanje.podaci.granice;
+  const red = SUSEDI.map(k=>({k, s:g[k]?.stvarno[i], p:g[k]?.plan[i], r:vrednost(k,i,"razlika")}))
+    .sort((a,b)=>Math.abs(b.s??-1)-Math.abs(a.s??-1));
+  $("tabela").innerHTML = red.map(r=>`<tr data-k="${r.k}" class="${stanje.hl===r.k?"hl":""}">
+    <td>${NAZIVI[r.k]}</td><td class="${klasa(r.s)}">${znak(r.s)}</td>
+    <td class="${klasa(r.p)}">${znak(r.p)}</td><td>${znak(r.r)}</td></tr>`).join("");
+}
+
+function crtaj(){
+  if(!stanje.podaci) return;
+  $("sat").textContent = oznakaSata(stanje.sat);
+  $("datumtxt").textContent = new Date(stanje.dan+"T12:00").toLocaleDateString("sr-Latn-RS",{weekday:"long",day:"numeric",month:"long",year:"numeric"});
+  $("klizac").value = stanje.sat;
+  legenda(); kartice(); graf(); tabela();
+  mapa.setProps({layers: slojevi()});
+  try{ history.replaceState(null,"",`#${stanje.dan}/${stanje.sat}/${stanje.rezim}`); }catch(e){}
+}
+
+async function ucitajDan(dan, sat){
+  const r = await fetch(`data/dani/${dan}.json`, {cache:"no-cache"});
+  if(!r.ok) throw new Error(`Nema podataka za ${dan}`);
+  stanje.podaci = await r.json(); stanje.dan = dan;
+  const n = stanje.podaci.sati.length;
+  $("klizac").max = n-1;
+  if(sat==null){ // podrazumevano: sat sa najvećim neto uvozom
+    let best = 0, bv = -Infinity;
+    for(let j=0;j<n;j++){ const z = zbir("stvarno",j); if(z!=null && Math.abs(z)>bv){ bv=Math.abs(z); best=j; } }
+    sat = best;
+  }
+  stanje.sat = Math.min(Math.max(0,sat), n-1);
+  $("dan").value = dan;
+  crtaj();
+}
+
+/* ---------- kontrole ---------- */
+$("klizac").addEventListener("input", e=>{ stanje.sat = +e.target.value; crtaj(); });
+$("dan").addEventListener("change", e=>{ zaustavi(); ucitajDan(e.target.value, stanje.sat).catch(pokaziGresku); });
+document.querySelectorAll(".seg button").forEach(b=>b.addEventListener("click", ()=>{
+  stanje.rezim = b.dataset.rezim;
+  document.querySelectorAll(".seg button").forEach(x=>x.setAttribute("aria-pressed", x===b));
+  crtaj();
+}));
+$("tabela").addEventListener("click", e=>{ const tr = e.target.closest("tr"); if(!tr) return;
+  stanje.hl = stanje.hl===tr.dataset.k ? null : tr.dataset.k; crtaj(); });
+$("graf").addEventListener("click", e=>{
+  const rect = e.currentTarget.getBoundingClientRect(), n = stanje.podaci.sati.length;
+  stanje.sat = Math.round((e.clientX-rect.left)/rect.width*(n-1)); crtaj();
+});
+function zaustavi(){ clearInterval(stanje.timer); stanje.timer=null; $("play").textContent="▶"; $("play").setAttribute("aria-label","Pusti animaciju"); }
+$("play").addEventListener("click", ()=>{
+  if(stanje.timer){ zaustavi(); return; }
+  $("play").textContent="❚❚"; $("play").setAttribute("aria-label","Zaustavi animaciju");
+  stanje.timer = setInterval(()=>{ stanje.sat = (stanje.sat+1) % stanje.podaci.sati.length; crtaj(); }, 900);
+});
+$("csv").addEventListener("click", ()=>{
+  const p = stanje.podaci, rows = [["datum","sat","granica","stvarno_neto_uvoz_MW","plan_neto_uvoz_MW","razlika_MW","potrosnja_RS_MW"]];
+  p.sati.forEach((s,j)=>SUSEDI.forEach(k=>{
+    const v=x=>x==null?"":x.toFixed(2);
+    rows.push([p.datum,s,`RS-${k}`,v(p.granice[k]?.stvarno[j]),v(p.granice[k]?.plan[j]),v(vrednost(k,j,"razlika")),v(p.srbija.potrosnja[j])]);
+  }));
+  const blob = new Blob(["﻿"+rows.map(r=>r.join(",")).join("\n")],{type:"text/csv"});
+  const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = `tokovi_RS_${p.datum}.csv`; a.click();
+});
+function pokaziGresku(e){ $("greska").style.display="block"; $("greska").textContent = e.message || String(e); }
+
+/* ---------- start ---------- */
+(async ()=>{
+  try{
+    const [idx, zemlje] = await Promise.all([
+      fetch("data/index.json",{cache:"no-cache"}).then(r=>{ if(!r.ok) throw new Error("Još nema preuzetih podataka. Pokreni osvežavanje u GitHub Actions."); return r.json(); }),
+      fetch("data/zemlje.geojson").then(r=>r.json())
+    ]);
+    stanje.zemlje = zemlje; stanje.dani = idx.dani;
+    if(!idx.dani.length) throw new Error("Još nema preuzetih podataka. Pokreni osvežavanje u GitHub Actions.");
+    $("dan").innerHTML = [...idx.dani].reverse().map(d=>
+      `<option value="${d}">${new Date(d+"T12:00").toLocaleDateString("sr-Latn-RS",{weekday:"short",day:"numeric",month:"short",year:"numeric"})}</option>`).join("");
+    $("osvezeno").textContent = "Poslednje osvežavanje: " + new Date(idx.osvezeno).toLocaleString("sr-Latn-RS",{dateStyle:"medium",timeStyle:"short"}) + ".";
+    const [hd, hs, hr] = decodeURIComponent(location.hash.slice(1)).split("/");
+    if(["stvarno","plan","razlika"].includes(hr)){ stanje.rezim = hr;
+      document.querySelectorAll(".seg button").forEach(x=>x.setAttribute("aria-pressed", x.dataset.rezim===hr)); }
+    const dan = idx.dani.includes(hd) ? hd : idx.dani[idx.dani.length-1];
+    await ucitajDan(dan, hd===dan && hs!=="" && !isNaN(+hs) ? +hs : null);
+  }catch(e){ pokaziGresku(e); mapa.setProps({layers: stanje.zemlje ? [new deck.GeoJsonLayer({id:"z",data:stanje.zemlje,getFillColor:[22,30,47],getLineColor:[52,66,95],lineWidthMinPixels:1})] : []}); }
+})();
+</script>
+</body>
+</html>
