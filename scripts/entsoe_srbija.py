@@ -24,6 +24,7 @@ import datetime as dt
 import json
 import os
 import sys
+import time
 from pathlib import Path
 
 import pandas as pd
@@ -49,14 +50,16 @@ def na_sat(serija, sati):
 
 def povuci(opis, funkcija, sati, **kwargs):
     """Poziva API; ako nema podatka vraca prazne vrednosti umesto greske."""
+    t0 = time.monotonic()
     try:
         rezultat = funkcija(**kwargs)
     except NoMatchingDataError:
-        print(f"    nema podatka: {opis}")
+        print(f"    {opis}: nema podatka ({time.monotonic() - t0:.1f}s)", flush=True)
         return na_sat(None, sati), None
-    except Exception as e:  # mreza, nepoznata zona, prekoracen limit...
-        print(f"    greska ({opis}): {e}")
-        return na_sat(None, sati), str(e)
+    except Exception as e:  # mreza, istek vremena, los token, prekoracen limit...
+        print(f"    {opis}: GRESKA {type(e).__name__}: {str(e)[:200]} ({time.monotonic() - t0:.1f}s)", flush=True)
+        return na_sat(None, sati), f"{type(e).__name__}: {e}"
+    print(f"    {opis}: ok ({time.monotonic() - t0:.1f}s)", flush=True)
 
     if isinstance(rezultat, pd.DataFrame):
         kolona = "Actual Load" if "Actual Load" in rezultat.columns else rezultat.columns[0]
@@ -161,7 +164,8 @@ def main():
     if od > do:
         sys.exit("--od mora biti pre --do")
 
-    client = EntsoePandasClient(api_key=token, retry_count=3, retry_delay=10)
+    # timeout: zahtev koji ne dobije odgovor za 60 s se prekida (bez ovoga moze da visi zauvek)
+    client = EntsoePandasClient(api_key=token, retry_count=2, retry_delay=5, timeout=60)
     (IZLAZ / "dani").mkdir(parents=True, exist_ok=True)
 
     print(f"Povlacim {od} - {do}")

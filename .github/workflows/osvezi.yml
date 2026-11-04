@@ -26,6 +26,7 @@ concurrency:
 jobs:
   osvezi:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     environment:
       name: github-pages
       url: ${{ steps.objava.outputs.page_url }}
@@ -49,7 +50,7 @@ jobs:
           ARGS=""
           if [ -n "$OD" ]; then ARGS="$ARGS --od $OD"; fi
           if [ -n "$DO" ]; then ARGS="$ARGS --do $DO"; fi
-          python scripts/entsoe_srbija.py $ARGS
+          python -u scripts/entsoe_srbija.py $ARGS
 
       - name: Sacuvaj podatke u repozitorijum
         run: |
