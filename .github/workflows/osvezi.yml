@@ -26,7 +26,7 @@ concurrency:
 jobs:
   osvezi:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 90
     environment:
       name: github-pages
       url: ${{ steps.objava.outputs.page_url }}

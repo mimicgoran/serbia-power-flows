@@ -208,7 +208,7 @@ function slojevi(){
     natpisi.push({k, pos:TACKE[k], txt:`${KRATKO[k]}\n${nf.format(Math.abs(v))} MW ${opis}`,
       boja: hl ? [100,115,143] : [230,236,245]});
   }
-  natpisi.push({k:"RS", pos:[TACKE.RS[0], TACKE.RS[1]+0.35], txt:"Srbija", boja:[230,236,245], vel:15});
+  natpisi.push({k:"RS", pos:TACKE.RS, txt:"Srbija", boja:[230,236,245], vel:15});
 
   return [
     new deck.GeoJsonLayer({
@@ -242,7 +242,8 @@ function slojevi(){
     new deck.TextLayer({
       id:"natpisi", data: natpisi, getPosition:d=>d.pos, getText:d=>d.txt,
       getColor:d=>d.boja, getSize:d=>d.vel||12, sizeUnits:"pixels",
-      getPixelOffset:d=>d.k==="RS"?[0,0]:[0,18], getTextAnchor:"middle", getAlignmentBaseline:"top",
+      getPixelOffset:d=>d.k==="RS"?[0,-12]:[0,18], getTextAnchor:"middle",
+      getAlignmentBaseline:d=>d.k==="RS"?"bottom":"top",
       fontFamily:"system-ui,-apple-system,Segoe UI,Roboto,sans-serif", fontWeight:600,
       characterSet:"auto", outlineWidth:3, outlineColor:[11,18,32,230],
       fontSettings:{sdf:true}, billboard:true,
