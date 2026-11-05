@@ -3,9 +3,8 @@ Prekogranicni tokovi struje za zonu Srbije (BZN|RS) - ENTSO-E Transparency Platf
 
 Za svaki dan povlaci:
   - stvarne fizicke tokove (Cross-Border Physical Flows, 12.1.G)
-  - plan razmene (Scheduled Commercial Exchanges, 12.1.F) - Total i Day-ahead
+  - plan razmene (Scheduled Commercial Exchanges, 12.1.F) - Total, oba smera
   - potrosnju Srbije (Actual Total Load, 6.1.A)
-  - neto poziciju Srbije (Day-ahead), za proveru zbira
 
 i upisuje:
   - docs/data/dani/YYYY-MM-DD.json   jedan fajl po danu
@@ -38,7 +37,6 @@ from entsoe.exceptions import NoMatchingDataError
 TZ = "Europe/Belgrade"
 SRBIJA = "RS"
 SUSEDI = ["HU", "RO", "BG", "MK", "XK", "ME", "BA", "HR", "AL"]
-TOLERANCIJA_MW = 1.0
 PARALELNO = 8      # istovremenih zahteva (ENTSO-E dozvoljava do 400 zahteva u minuti)
 POKUSAJA = 3       # pokusaja po zahtevu kod privremenih gresaka servera
 TOKEN = None
@@ -61,6 +59,14 @@ def bez_tokena(tekst):
 
 
 _lokalno = threading.local()
+_ispis = threading.Lock()
+
+
+def log(poruka):
+    """Ispis iz vise niti, bez mesanja redova."""
+    with _ispis:
+        sys.stdout.write(poruka + "\n")
+        sys.stdout.flush()
 
 
 def klijent():
@@ -87,17 +93,17 @@ def povuci(opis, metoda, sati, **kwargs):
             rezultat = getattr(klijent(), metoda)(**kwargs)
             break
         except NoMatchingDataError:
-            print(f"    {opis}: nema podatka ({time.monotonic() - t0:.1f}s)", flush=True)
+            log(f"    {opis}: nema podatka ({time.monotonic() - t0:.1f}s)")
             return na_sat(None, sati), None
         except Exception as e:
             poruka = f"{type(e).__name__}: {bez_tokena(e)[:160]}"
             if pokusaj < POKUSAJA and privremena_greska(e):
-                print(f"    {opis}: {poruka} - pokusavam ponovo ({pokusaj}/{POKUSAJA})", flush=True)
+                log(f"    {opis}: {poruka} - pokusavam ponovo ({pokusaj}/{POKUSAJA})")
                 time.sleep(5 * pokusaj)
                 continue
-            print(f"    {opis}: GRESKA {poruka} ({time.monotonic() - t0:.1f}s)", flush=True)
+            log(f"    {opis}: GRESKA {poruka} ({time.monotonic() - t0:.1f}s)")
             return na_sat(None, sati), poruka
-    print(f"    {opis}: ok ({time.monotonic() - t0:.1f}s)", flush=True)
+    log(f"    {opis}: ok ({time.monotonic() - t0:.1f}s)")
 
     if isinstance(rezultat, pd.DataFrame):
         kolona = "Actual Load" if "Actual Load" in rezultat.columns else rezultat.columns[0]
@@ -125,13 +131,10 @@ def jedan_dan(dan):
             ((s, "izvoz"), f"tok RS->{s}", "query_crossborder_flows", iz_rs),
             ((s, "p_uvoz"), f"plan {s}->RS", "query_scheduled_exchanges", {**za_rs, "dayahead": False}),
             ((s, "p_izvoz"), f"plan RS->{s}", "query_scheduled_exchanges", {**iz_rs, "dayahead": False}),
-            ((s, "da_uvoz"), f"plan DA {s}->RS", "query_scheduled_exchanges", {**za_rs, "dayahead": True}),
-            ((s, "da_izvoz"), f"plan DA RS->{s}", "query_scheduled_exchanges", {**iz_rs, "dayahead": True}),
         ]
-    poslovi += [
-        (("RS", "potrosnja"), "potrosnja RS", "query_load", dict(country_code=SRBIJA)),
-        (("RS", "neto_poz"), "neto pozicija RS", "query_net_position", dict(country_code=SRBIJA, dayahead=True)),
-    ]
+    # Neto pozicija Srbije se ne preuzima: API je za BZN|RS ne objavljuje
+    # ("No matching data found for IMPLICIT_ALLOCATIONS_NET_POSITIONS [12.1.E]").
+    poslovi.append((("RS", "potrosnja"), "potrosnja RS", "query_load", dict(country_code=SRBIJA)))
 
     r, greske = {}, []
     with ThreadPoolExecutor(max_workers=PARALELNO) as ex:
@@ -144,28 +147,17 @@ def jedan_dan(dan):
                 greske.append(greska)
 
     granice = {}
-    plan_da = {}
     for s in SUSEDI:
         uvoz, izvoz = r[(s, "uvoz")], r[(s, "izvoz")]
         p_uvoz, p_izvoz = r[(s, "p_uvoz")], r[(s, "p_izvoz")]
-        da_uvoz, da_izvoz = r[(s, "da_uvoz")], r[(s, "da_izvoz")]
         granice[s] = {
             "stvarno": lista(uvoz - izvoz),
             "plan": lista(p_uvoz - p_izvoz),
             "plan_uvoz": lista(p_uvoz),
             "plan_izvoz": lista(p_izvoz),
         }
-        plan_da[s] = da_uvoz - da_izvoz
 
     potrosnja = r[("RS", "potrosnja")]
-    neto_poz = r[("RS", "neto_poz")]
-
-    # Provera: zbir Day-ahead plana po granicama mora odgovarati neto poziciji.
-    # Predznak neto pozicije na API-ju nije proveren, pa se porede apsolutne vrednosti.
-    zbir_da = pd.DataFrame(plan_da).sum(axis=1, min_count=1)
-    odstupanje = (zbir_da.abs() - neto_poz.abs()).abs()
-    provera = ["nema podatka" if pd.isna(o) else ("ok" if o <= TOLERANCIJA_MW else "ne slaže se")
-               for o in odstupanje]
 
     ima_tokova = any(v is not None for g in granice.values() for v in g["stvarno"])
     return {
@@ -175,18 +167,36 @@ def jedan_dan(dan):
         "granice": granice,
         "srbija": {
             "potrosnja": lista(potrosnja),
-            "neto_pozicija_da": lista(neto_poz),
-            "zbir_plana_da": lista(zbir_da),
-            "provera": provera,
         },
         "osvezeno": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%MZ"),
     }, ima_tokova, greske
 
 
+def potpun(podaci):
+    """Dan je potpun ako potrosnja postoji za svaki sat, a svaka granica ima vrednost
+    za svaki sat ili nema nijednu (granica koja se ne objavljuje, npr. Albanija n/e)."""
+    def ceo_niz(niz):
+        prisutno = sum(v is not None for v in niz)
+        return prisutno == 0 or prisutno == len(niz)
+
+    potr = podaci["srbija"]["potrosnja"]
+    if any(v is None for v in potr):
+        return False
+    return all(ceo_niz(g["stvarno"]) and ceo_niz(g["plan"]) for g in podaci["granice"].values())
+
+
 def osvezi_index():
-    dani = sorted(p.stem for p in (IZLAZ / "dani").glob("*.json"))
+    dani, nepotpuni = [], []
+    for p in sorted((IZLAZ / "dani").glob("*.json")):
+        dani.append(p.stem)
+        try:
+            if not potpun(json.loads(p.read_text(encoding="utf-8"))):
+                nepotpuni.append(p.stem)
+        except (ValueError, KeyError):
+            nepotpuni.append(p.stem)
     index = {
         "dani": dani,
+        "nepotpuni": nepotpuni,
         "osvezeno": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%MZ"),
     }
     (IZLAZ / "index.json").write_text(json.dumps(index, ensure_ascii=False, indent=1), encoding="utf-8")
@@ -232,6 +242,9 @@ def main():
         dan += dt.timedelta(days=1)
 
     dani = osvezi_index()
+    nepotpuni = json.loads((IZLAZ / "index.json").read_text(encoding="utf-8"))["nepotpuni"]
+    if nepotpuni:
+        print("Dani sa nepotpunim podacima:", ", ".join(nepotpuni))
     print(f"Upisano dana: {upisano}. Ukupno u arhivi: {len(dani)}. "
           f"Trajanje: {(time.monotonic() - t0) / 60:.1f} min.")
     if sve_greske:
