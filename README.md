@@ -41,7 +41,7 @@ regardless of contractual routes.
 - Hourly indicators for Serbia: total load, net import or export, share of load covered by net import,
   and total deviation from schedule.
 - Daily net import/export profile (measured vs. net schedule).
-- Per-border table and CSV export for the selected day.
+- Per-border table for the selected hour, with measured, net-schedule and difference values.
 - The default view opens on the most recent day with complete data.
 - Fully automated: data acquisition, archiving and publishing run on GitHub Actions at no cost.
 

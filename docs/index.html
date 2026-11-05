@@ -71,7 +71,7 @@
     <div id="mapa"></div>
     <header>
       <h1>Prekogranični tokovi električne energije</h1>
-      <p id="podnaslov">Srbija · izmereni fizički tokovi snage po granicama, satni prosek (MW)</p>
+      <p id="podnaslov">Izmereni fizički tokovi snage po granicama, satni prosek (MW)</p>
     </header>
     <div class="legend" id="legenda"></div>
   </div>
@@ -116,7 +116,6 @@
       <tbody id="tabela"></tbody>
     </table>
     <p class="note">Pozitivno = uvoz u Srbiju, negativno = izvoz. Neto plan = svi ugovori ka Srbiji minus svi ugovori iz Srbije. Razlika = stvarno − neto plan.</p>
-    <button id="csv" style="margin-top:4px">Preuzmi podatke za ovaj dan (CSV)</button>
 
     <h2>O podacima</h2>
     <div class="note">
@@ -124,9 +123,6 @@
         Stvarno = Cross-Border Physical Flows (12.1.G), izmerene satne vrednosti, zbirno po granici, ne po dalekovodu.
         Plan = Scheduled Commercial Exchanges (12.1.F, Total), prikazan kao neto vrednost po granici. Potrošnja = Actual Total Load (6.1.A).</p>
       <p>Razlika su neplanirani tokovi: snaga se kroz povezanu mrežu raspoređuje po svim paralelnim putevima, nezavisno od ugovora.</p>
-      <p>Prikazane su zone trgovanja ENTSO-E. Operatori mogu naknadno da isprave vrednosti; poslednja 3 dana se svakog jutra ponovo preuzimaju.
-        „n/e” znači da podatak nije objavljen.</p>
-      <p>* Kosovo i Metohija prikazani su kao deo Srbije. Oznaka Kosovo* odnosi se na posebnu zonu trgovanja u podacima ENTSO-E i u skladu je sa Rezolucijom SB UN 1244.</p>
       <p>Granice: Natural Earth. <span id="osvezeno"></span></p>
     </div>
   </aside>
@@ -254,9 +250,9 @@ function legenda(){
   $("legenda").innerHTML = stanje.rezim==="razlika"
     ? `<span><i style="background:var(--razlika)"></i>Neplanirani tok, luk ide u smeru viška u odnosu na plan</span><span>Debljina = MW</span>`
     : `<span><i style="background:var(--uvoz)"></i>Uvoz u Srbiju</span><span><i style="background:var(--izvoz)"></i>Izvoz iz Srbije</span><span>Debljina = MW</span>`;
-  $("podnaslov").textContent = {stvarno:"Srbija · izmereni fizički tokovi snage po granicama, satni prosek (MW)",
-    plan:"Srbija · neto planirana razmena po granicama, satni prosek (MW)",
-    razlika:"Srbija · neplanirani tokovi: izmereno minus neto plan (MW)"}[stanje.rezim];
+  $("podnaslov").textContent = {stvarno:"Izmereni fizički tokovi snage po granicama, satni prosek (MW)",
+    plan:"Neto planirana razmena po granicama, satni prosek (MW)",
+    razlika:"Neplanirani tokovi: izmereno minus neto plan (MW)"}[stanje.rezim];
 }
 
 function kartice(){
@@ -347,15 +343,6 @@ $("play").addEventListener("click", ()=>{
   if(stanje.timer){ zaustavi(); return; }
   $("play").textContent="❚❚"; $("play").setAttribute("aria-label","Zaustavi animaciju");
   stanje.timer = setInterval(()=>{ stanje.sat = (stanje.sat+1) % stanje.podaci.sati.length; crtaj(); }, 900);
-});
-$("csv").addEventListener("click", ()=>{
-  const p = stanje.podaci, rows = [["datum","sat","granica","stvarno_neto_uvoz_MW","plan_neto_uvoz_MW","razlika_MW","potrosnja_RS_MW"]];
-  p.sati.forEach((s,j)=>SUSEDI.forEach(k=>{
-    const v=x=>x==null?"":x.toFixed(2);
-    rows.push([p.datum,s,`RS-${k}`,v(p.granice[k]?.stvarno[j]),v(p.granice[k]?.plan[j]),v(vrednost(k,j,"razlika")),v(p.srbija.potrosnja[j])]);
-  }));
-  const blob = new Blob(["﻿"+rows.map(r=>r.join(",")).join("\n")],{type:"text/csv"});
-  const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = `tokovi_RS_${p.datum}.csv`; a.click();
 });
 function pokaziGresku(e){ $("greska").style.display="block"; $("greska").textContent = e.message || String(e); }
 
